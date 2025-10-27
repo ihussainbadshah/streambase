@@ -490,15 +490,30 @@ public class DeviceConnectionStatusHandler implements DeviceMessageHandler {
             return Optional.empty();
         }
 
-        if (StringUtils.isNotEmpty(targetDeviceId) && deviceIdsInCache.contains(targetDeviceId)) {
-            deviceId = targetDeviceId;
-        } else {
-            if (deviceIdsInCache.size() == 1) {
-                deviceId = deviceIdsInCache.iterator().next();
-            } else {
-                logger.error("{} cannot be forwarded to DeviceMessaging as there are multiple vehicleId to "
-                        + "deviceId mappings present.", header);
-                throw new DeviceMessagingException("Multiple forwards not allowed for key :" + vehicleId);
+        if (deviceIdsInCache != null && deviceIdsInCache.size() > 0) {
+            if (StringUtils.isNotEmpty(targetDeviceId)) {
+                if (deviceIdsInCache.contains(targetDeviceId)) {
+                    deviceId = targetDeviceId;
+                } else {
+                    // Force to read from redis if vehicleInactive
+                    deviceIdsInCache =
+                            (processPerSubService && subServicesList.contains(subService))
+                                    ? deviceService.forceGet(vehicleId, Optional.of(subService))
+                                    : deviceService.forceGet(vehicleId, Optional.empty());
+                    if (deviceIdsInCache != null && deviceIdsInCache.contains(targetDeviceId)) {
+                        deviceId = targetDeviceId;
+                        logger.info("DeviceIdsInCache {} returned from redis contains targetDeviceId {}",
+                                        deviceIdsInCache, targetDeviceId);
+                    }
+                }
+            } else { // If no targetDeviceId found in the event, return whatever is present in in-memory cache
+                if (deviceIdsInCache.size() == 1) {
+                    deviceId = deviceIdsInCache.iterator().next();
+                } else {
+                    logger.error("{} cannot be forwarded to DeviceMessaging as there are multiple "  
+                                + "vehicleId to deviceId mappings present.", header);
+                    throw new DeviceMessagingException("Multiple forwards not allowed for key :" + vehicleId);
+                }
             }
         }
         return Optional.ofNullable(deviceId);
